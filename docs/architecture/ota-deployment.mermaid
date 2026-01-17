@@ -1,0 +1,154 @@
+graph TB
+    subgraph "Development Environment - Docker Compose"
+        subgraph "docker-compose.yml"
+            DC_HB[hawkbit<br/>:latest<br/>Port: 8080]
+            DC_MQTT[eclipse-mosquitto<br/>:2.0<br/>Port: 1883, 8883]
+            DC_MINIO[minio/minio<br/>:latest<br/>Port: 9000, 9001]
+            DC_PG[postgres<br/>:15-alpine<br/>Port: 5432]
+            DC_REDIS[redis<br/>:7-alpine<br/>Port: 6379]
+            DC_API[custom/ota-api<br/>:dev<br/>Port: 8000]
+            DC_WEB[custom/ota-web<br/>:dev<br/>Port: 3000]
+            DC_SIGN[custom/signing-svc<br/>:dev<br/>Port: 8001]
+        end
+        
+        DC_VOL[Docker Volumes<br/>- hawkbit-data<br/>- postgres-data<br/>- minio-data<br/>- redis-data]
+        
+        DC_NET[Docker Network<br/>ota-network<br/>bridge]
+    end
+    
+    subgraph "Production/Demo - Kubernetes"
+        subgraph "Namespace: ota-system"
+            subgraph "Update Management"
+                K8S_HB_DEP[Deployment: hawkbit<br/>Replicas: 2<br/>Resources: 1CPU, 2Gi]
+                K8S_HB_SVC[Service: hawkbit<br/>ClusterIP]
+                K8S_HB_ING[Ingress: hawkbit<br/>TLS: Let's Encrypt]
+            end
+            
+            subgraph "API Layer"
+                K8S_API_DEP[Deployment: ota-api<br/>Replicas: 3<br/>HPA: 3-10]
+                K8S_API_SVC[Service: ota-api<br/>ClusterIP]
+                K8S_WEB_DEP[Deployment: ota-web<br/>Replicas: 2]
+                K8S_WEB_SVC[Service: ota-web<br/>ClusterIP]
+                K8S_API_ING[Ingress: api.ota<br/>TLS: Let's Encrypt]
+            end
+            
+            subgraph "Storage Services"
+                K8S_MINIO_STS[StatefulSet: minio<br/>Replicas: 4<br/>Mode: Distributed]
+                K8S_MINIO_SVC[Service: minio<br/>Headless]
+                K8S_MINIO_PVC[PVC: minio-data<br/>Storage Class: fast-ssd<br/>Size: 100Gi each]
+            end
+            
+            subgraph "Data Layer"
+                K8S_PG_STS[StatefulSet: postgres<br/>Replicas: 1<br/>HA: Patroni later]
+                K8S_PG_SVC[Service: postgres<br/>ClusterIP]
+                K8S_PG_PVC[PVC: postgres-data<br/>Size: 50Gi]
+                K8S_REDIS_DEP[Deployment: redis<br/>Replicas: 1<br/>Mode: Standalone]
+                K8S_REDIS_SVC[Service: redis<br/>ClusterIP]
+            end
+            
+            subgraph "Messaging"
+                K8S_MQTT_DEP[Deployment: mosquitto<br/>Replicas: 2]
+                K8S_MQTT_SVC[Service: mosquitto<br/>LoadBalancer<br/>Ports: 1883, 8883]
+            end
+            
+            subgraph "Security"
+                K8S_VAULT_STS[StatefulSet: vault<br/>Replicas: 3<br/>Mode: HA-Raft]
+                K8S_VAULT_SVC[Service: vault<br/>ClusterIP]
+                K8S_SIGN_DEP[Deployment: signing<br/>Replicas: 2]
+                K8S_SIGN_SVC[Service: signing<br/>ClusterIP]
+            end
+            
+            subgraph "Monitoring"
+                K8S_PROM_STS[StatefulSet: prometheus<br/>Replicas: 1]
+                K8S_PROM_SVC[Service: prometheus<br/>ClusterIP]
+                K8S_GRAF_DEP[Deployment: grafana<br/>Replicas: 1]
+                K8S_GRAF_SVC[Service: grafana<br/>ClusterIP]
+                K8S_GRAF_ING[Ingress: grafana<br/>TLS: Let's Encrypt]
+            end
+        end
+        
+        subgraph "K8s Infrastructure"
+            K8S_ING_CTRL[Ingress Controller<br/>NGINX/Traefik]
+            K8S_CERT[Cert Manager<br/>Let's Encrypt]
+            K8S_STORAGE[Storage Classes<br/>- fast-ssd: SSD<br/>- standard: HDD]
+        end
+    end
+    
+    subgraph "Edge Devices"
+        subgraph "Device Configuration"
+            DEV_AGENT[Update Agent<br/>Systemd Service]
+            DEV_CONFIG[Config File<br/>/etc/ota/config.yaml<br/>- Server URL<br/>- Device ID<br/>- Certificates]
+            DEV_CERTS[Certificates<br/>/etc/ota/certs/<br/>- ca.crt<br/>- device.crt<br/>- device.key]
+        end
+    end
+    
+    subgraph "CI/CD - GitHub Actions"
+        GH_BUILD[Build Workflow<br/>- Build Docker images<br/>- Run tests<br/>- Push to registry]
+        GH_DEPLOY[Deploy Workflow<br/>- Update K8s manifests<br/>- Apply via kubectl<br/>- Rollout status check]
+        GH_REGISTRY[Container Registry<br/>ghcr.io or DockerHub]
+    end
+    
+    %% Docker Compose Connections
+    DC_HB -.->|uses| DC_PG
+    DC_API -.->|uses| DC_PG
+    DC_API -.->|uses| DC_REDIS
+    DC_API -.->|uses| DC_MINIO
+    DC_HB -.->|publishes| DC_MQTT
+    DC_SIGN -.->|stores| DC_MINIO
+    DC_WEB -.->|calls| DC_API
+    
+    DC_HB -.->|mounts| DC_VOL
+    DC_PG -.->|mounts| DC_VOL
+    DC_MINIO -.->|mounts| DC_VOL
+    DC_REDIS -.->|mounts| DC_VOL
+    
+    DC_HB -.->|joins| DC_NET
+    DC_MQTT -.->|joins| DC_NET
+    DC_API -.->|joins| DC_NET
+    
+    %% K8s Connections
+    K8S_HB_DEP -->|exposes| K8S_HB_SVC
+    K8S_HB_SVC -->|routes| K8S_HB_ING
+    K8S_HB_ING -->|uses| K8S_ING_CTRL
+    K8S_HB_ING -.->|certificate| K8S_CERT
+    
+    K8S_API_DEP -->|exposes| K8S_API_SVC
+    K8S_WEB_DEP -->|exposes| K8S_WEB_SVC
+    K8S_API_SVC -->|routes| K8S_API_ING
+    
+    K8S_MINIO_STS -->|claims| K8S_MINIO_PVC
+    K8S_MINIO_STS -->|exposes| K8S_MINIO_SVC
+    K8S_PG_STS -->|claims| K8S_PG_PVC
+    K8S_PG_STS -->|exposes| K8S_PG_SVC
+    
+    K8S_PROM_STS -->|exposes| K8S_PROM_SVC
+    K8S_GRAF_DEP -->|exposes| K8S_GRAF_SVC
+    K8S_GRAF_SVC -->|routes| K8S_GRAF_ING
+    
+    K8S_MINIO_PVC -.->|uses| K8S_STORAGE
+    K8S_PG_PVC -.->|uses| K8S_STORAGE
+    
+    %% CI/CD Flow
+    GH_BUILD -->|push images| GH_REGISTRY
+    GH_REGISTRY -->|pull images| K8S_API_DEP
+    GH_REGISTRY -->|pull images| K8S_WEB_DEP
+    GH_DEPLOY -->|kubectl apply| K8S_API_DEP
+    
+    %% Device Connections
+    DEV_AGENT -.->|connects via MQTT| K8S_MQTT_SVC
+    DEV_AGENT -.->|downloads from| K8S_MINIO_SVC
+    DEV_CONFIG -.->|configures| DEV_AGENT
+    DEV_CERTS -.->|authenticates| DEV_AGENT
+    
+    %% Styling with better contrast
+    classDef docker fill:#4fc3f7,stroke:#01579b,color:#000,stroke-width:2px
+    classDef k8s fill:#5c6bc0,stroke:#1a237e,color:#fff,stroke-width:2px
+    classDef storage fill:#ffd54f,stroke:#f57c00,color:#000,stroke-width:2px
+    classDef cicd fill:#ba68c8,stroke:#4a148c,color:#fff,stroke-width:2px
+    classDef device fill:#66bb6a,stroke:#1b5e20,color:#000,stroke-width:2px
+    
+    class DC_HB,DC_MQTT,DC_MINIO,DC_PG,DC_REDIS,DC_API,DC_WEB,DC_SIGN docker
+    class K8S_HB_DEP,K8S_API_DEP,K8S_WEB_DEP,K8S_MINIO_STS,K8S_PG_STS,K8S_MQTT_DEP,K8S_VAULT_STS k8s
+    class DC_VOL,K8S_MINIO_PVC,K8S_PG_PVC,K8S_STORAGE storage
+    class GH_BUILD,GH_DEPLOY,GH_REGISTRY cicd
+    class DEV_AGENT,DEV_CONFIG,DEV_CERTS device
