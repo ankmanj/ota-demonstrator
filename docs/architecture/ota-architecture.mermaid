@@ -1,0 +1,121 @@
+graph TB
+    subgraph "Cloud/Backend Infrastructure"
+        subgraph "Update Management"
+            HB[Eclipse hawkBit<br/>Update Server]
+            API[REST API<br/>FastAPI/Flask]
+            WEB[Web Dashboard<br/>React + Tailwind]
+        end
+        
+        subgraph "Storage & Data"
+            MINIO[MinIO<br/>Update Package Storage<br/>S3-compatible]
+            PG[(PostgreSQL<br/>Device Registry<br/>Campaign Data)]
+            REDIS[(Redis<br/>Job Queue<br/>Session Cache)]
+        end
+        
+        subgraph "Security Layer"
+            VAULT[HashiCorp Vault<br/>Key Management<br/>Signing Keys]
+            SIGN[Signing Service<br/>Package Verification]
+        end
+        
+        subgraph "Communication"
+            MQTT[Mosquitto MQTT Broker<br/>Device Communication]
+            PROM[Prometheus<br/>Metrics Collection]
+        end
+    end
+    
+    subgraph "CI/CD Pipeline"
+        GH[GitHub Actions<br/>Build Automation]
+        BUILD[Package Builder<br/>Delta Generation]
+    end
+    
+    subgraph "Edge Devices - Vehicle Simulation"
+        subgraph "Device 1 - Raspberry Pi 4"
+            CLIENT1[Update Client<br/>SWUpdate/RAUC]
+            PART1A[Partition A<br/>Active System]
+            PART1B[Partition B<br/>Standby/Update]
+            BOOT1[Bootloader<br/>U-Boot]
+            AGENT1[Telemetry Agent<br/>Status Reporting]
+        end
+        
+        subgraph "Device 2 - NVIDIA Jetson"
+            CLIENT2[Update Client<br/>SWUpdate/RAUC]
+            PART2A[Partition A<br/>Active System]
+            PART2B[Partition B<br/>Standby/Update]
+            BOOT2[Bootloader<br/>UEFI/U-Boot]
+            AGENT2[Telemetry Agent<br/>Status Reporting]
+            TPM[TPM/Secure Boot<br/>Hardware Security]
+        end
+        
+        subgraph "Device 3+ - Fleet"
+            FLEET[... Additional Devices<br/>Scalability Testing]
+        end
+    end
+    
+    subgraph "Integration Points"
+        HA[Home Assistant<br/>Smart Home Integration<br/>Your Existing Setup]
+        GRAFANA[Grafana<br/>Monitoring Dashboard]
+    end
+    
+    %% CI/CD Flow
+    GH -->|Build Trigger| BUILD
+    BUILD -->|Upload Package| MINIO
+    BUILD -->|Request Signing| SIGN
+    SIGN <-->|Fetch Keys| VAULT
+    SIGN -->|Signed Package| MINIO
+    BUILD -->|Register Version| HB
+    
+    %% Backend Connections
+    WEB <-->|API Calls| API
+    API <-->|Device Data| PG
+    API <-->|Session/Cache| REDIS
+    API <-->|Package URLs| MINIO
+    API <-->|Campaign Control| HB
+    HB <-->|Commands| MQTT
+    API -->|Metrics| PROM
+    
+    %% Device Communication
+    MQTT <-->|Subscribe/Publish| CLIENT1
+    MQTT <-->|Subscribe/Publish| CLIENT2
+    MQTT <-->|Fleet Comm| FLEET
+    
+    %% Update Flow - Device 1
+    CLIENT1 -->|Check Updates| HB
+    CLIENT1 -->|Download Package| MINIO
+    CLIENT1 -->|Verify Signature| SIGN
+    CLIENT1 -->|Write Update| PART1B
+    BOOT1 -->|A/B Switch| PART1A
+    BOOT1 -->|A/B Switch| PART1B
+    AGENT1 -->|Status/Logs| MQTT
+    AGENT1 -->|Metrics| PROM
+    
+    %% Update Flow - Device 2
+    CLIENT2 -->|Check Updates| HB
+    CLIENT2 -->|Download Package| MINIO
+    CLIENT2 -->|Verify Signature| SIGN
+    CLIENT2 -->|Hardware Verify| TPM
+    CLIENT2 -->|Write Update| PART2B
+    BOOT2 -->|Secure Boot| PART2A
+    BOOT2 -->|Secure Boot| PART2B
+    BOOT2 <-->|Attestation| TPM
+    AGENT2 -->|Status/Logs| MQTT
+    AGENT2 -->|Metrics| PROM
+    
+    %% Monitoring & Integration
+    PROM -->|Visualize| GRAFANA
+    MQTT -->|Events| HA
+    API -->|REST API| HA
+    
+    %% Styling with better contrast
+    classDef backend fill:#4fc3f7,stroke:#01579b,stroke-width:2px,color:#000
+    classDef storage fill:#ffd54f,stroke:#f57f17,stroke-width:2px,color:#000
+    classDef security fill:#ef5350,stroke:#b71c1c,stroke-width:2px,color:#fff
+    classDef device fill:#66bb6a,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef cicd fill:#ba68c8,stroke:#4a148c,stroke-width:2px,color:#fff
+    classDef integration fill:#ff9800,stroke:#e65100,stroke-width:2px,color:#000
+    
+    class HB,API,WEB,MQTT backend
+    class MINIO,PG,REDIS storage
+    class VAULT,SIGN,TPM security
+    class CLIENT1,CLIENT2,PART1A,PART1B,PART2A,PART2B,BOOT1,BOOT2,AGENT1,AGENT2,FLEET device
+    class GH,BUILD cicd
+    class HA,GRAFANA,PROM integration
