@@ -1,0 +1,171 @@
+@startuml OTA Deployment
+!theme plain
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultFontSize 9
+
+' Color definitions
+skinparam rectangle {
+    BackgroundColor<<docker>> #4fc3f7
+    BorderColor<<docker>> #01579b
+    FontColor<<docker>> #000000
+
+    BackgroundColor<<k8s>> #5c6bc0
+    BorderColor<<k8s>> #1a237e
+    FontColor<<k8s>> #ffffff
+
+    BackgroundColor<<storage>> #ffd54f
+    BorderColor<<storage>> #f57c00
+    FontColor<<storage>> #000000
+
+    BackgroundColor<<cicd>> #ba68c8
+    BorderColor<<cicd>> #4a148c
+    FontColor<<cicd>> #ffffff
+
+    BackgroundColor<<device>> #66bb6a
+    BorderColor<<device>> #1b5e20
+    FontColor<<device>> #000000
+}
+
+package "Development Environment - Docker Compose" {
+    package "docker-compose.yml" {
+        rectangle "hawkbit\n:latest\nPort: 8080" as DC_HB <<docker>>
+        rectangle "eclipse-mosquitto\n:2.0\nPort: 1883, 8883" as DC_MQTT <<docker>>
+        rectangle "minio/minio\n:latest\nPort: 9000, 9001" as DC_MINIO <<docker>>
+        rectangle "postgres\n:15-alpine\nPort: 5432" as DC_PG <<docker>>
+        rectangle "redis\n:7-alpine\nPort: 6379" as DC_REDIS <<docker>>
+        rectangle "custom/ota-api\n:dev\nPort: 8000" as DC_API <<docker>>
+        rectangle "custom/ota-web\n:dev\nPort: 3000" as DC_WEB <<docker>>
+        rectangle "custom/signing-svc\n:dev\nPort: 8001" as DC_SIGN <<docker>>
+    }
+
+    rectangle "Docker Volumes\n- hawkbit-data\n- postgres-data\n- minio-data\n- redis-data" as DC_VOL <<storage>>
+
+    rectangle "Docker Network\nota-network\nbridge" as DC_NET
+}
+
+package "Production/Demo - Kubernetes" {
+    package "Namespace: ota-system" {
+        package "Update Management" {
+            rectangle "Deployment: hawkbit\nReplicas: 2\nResources: 1CPU, 2Gi" as K8S_HB_DEP <<k8s>>
+            rectangle "Service: hawkbit\nClusterIP" as K8S_HB_SVC <<k8s>>
+            rectangle "Ingress: hawkbit\nTLS: Let's Encrypt" as K8S_HB_ING <<k8s>>
+        }
+
+        package "API Layer" {
+            rectangle "Deployment: ota-api\nReplicas: 3\nHPA: 3-10" as K8S_API_DEP <<k8s>>
+            rectangle "Service: ota-api\nClusterIP" as K8S_API_SVC <<k8s>>
+            rectangle "Deployment: ota-web\nReplicas: 2" as K8S_WEB_DEP <<k8s>>
+            rectangle "Service: ota-web\nClusterIP" as K8S_WEB_SVC <<k8s>>
+            rectangle "Ingress: api.ota\nTLS: Let's Encrypt" as K8S_API_ING <<k8s>>
+        }
+
+        package "Storage Services" {
+            rectangle "StatefulSet: minio\nReplicas: 4\nMode: Distributed" as K8S_MINIO_STS <<k8s>>
+            rectangle "Service: minio\nHeadless" as K8S_MINIO_SVC <<k8s>>
+            rectangle "PVC: minio-data\nStorage Class: fast-ssd\nSize: 100Gi each" as K8S_MINIO_PVC <<storage>>
+        }
+
+        package "Data Layer" {
+            rectangle "StatefulSet: postgres\nReplicas: 1\nHA: Patroni later" as K8S_PG_STS <<k8s>>
+            rectangle "Service: postgres\nClusterIP" as K8S_PG_SVC <<k8s>>
+            rectangle "PVC: postgres-data\nSize: 50Gi" as K8S_PG_PVC <<storage>>
+            rectangle "Deployment: redis\nReplicas: 1\nMode: Standalone" as K8S_REDIS_DEP <<k8s>>
+            rectangle "Service: redis\nClusterIP" as K8S_REDIS_SVC <<k8s>>
+        }
+
+        package "Messaging" {
+            rectangle "Deployment: mosquitto\nReplicas: 2" as K8S_MQTT_DEP <<k8s>>
+            rectangle "Service: mosquitto\nLoadBalancer\nPorts: 1883, 8883" as K8S_MQTT_SVC <<k8s>>
+        }
+
+        package "Security" {
+            rectangle "StatefulSet: vault\nReplicas: 3\nMode: HA-Raft" as K8S_VAULT_STS <<k8s>>
+            rectangle "Service: vault\nClusterIP" as K8S_VAULT_SVC <<k8s>>
+            rectangle "Deployment: signing\nReplicas: 2" as K8S_SIGN_DEP <<k8s>>
+            rectangle "Service: signing\nClusterIP" as K8S_SIGN_SVC <<k8s>>
+        }
+
+        package "Monitoring" {
+            rectangle "StatefulSet: prometheus\nReplicas: 1" as K8S_PROM_STS <<k8s>>
+            rectangle "Service: prometheus\nClusterIP" as K8S_PROM_SVC <<k8s>>
+            rectangle "Deployment: grafana\nReplicas: 1" as K8S_GRAF_DEP <<k8s>>
+            rectangle "Service: grafana\nClusterIP" as K8S_GRAF_SVC <<k8s>>
+            rectangle "Ingress: grafana\nTLS: Let's Encrypt" as K8S_GRAF_ING <<k8s>>
+        }
+    }
+
+    package "K8s Infrastructure" {
+        rectangle "Ingress Controller\nNGINX/Traefik" as K8S_ING_CTRL <<k8s>>
+        rectangle "Cert Manager\nLet's Encrypt" as K8S_CERT <<k8s>>
+        rectangle "Storage Classes\n- fast-ssd: SSD\n- standard: HDD" as K8S_STORAGE <<storage>>
+    }
+}
+
+package "Edge Devices" {
+    package "Device Configuration" {
+        rectangle "Update Agent\nSystemd Service" as DEV_AGENT <<device>>
+        rectangle "Config File\n/etc/ota/config.yaml\n- Server URL\n- Device ID\n- Certificates" as DEV_CONFIG <<device>>
+        rectangle "Certificates\n/etc/ota/certs/\n- ca.crt\n- device.crt\n- device.key" as DEV_CERTS <<device>>
+    }
+}
+
+package "CI/CD - GitHub Actions" {
+    rectangle "Build Workflow\n- Build Docker images\n- Run tests\n- Push to registry" as GH_BUILD <<cicd>>
+    rectangle "Deploy Workflow\n- Update K8s manifests\n- Apply via kubectl\n- Rollout status check" as GH_DEPLOY <<cicd>>
+    rectangle "Container Registry\nghcr.io or DockerHub" as GH_REGISTRY <<cicd>>
+}
+
+' Docker Compose Connections
+DC_HB ..> DC_PG : uses
+DC_API ..> DC_PG : uses
+DC_API ..> DC_REDIS : uses
+DC_API ..> DC_MINIO : uses
+DC_HB ..> DC_MQTT : publishes
+DC_SIGN ..> DC_MINIO : stores
+DC_WEB ..> DC_API : calls
+
+DC_HB ..> DC_VOL : mounts
+DC_PG ..> DC_VOL : mounts
+DC_MINIO ..> DC_VOL : mounts
+DC_REDIS ..> DC_VOL : mounts
+
+DC_HB ..> DC_NET : joins
+DC_MQTT ..> DC_NET : joins
+DC_API ..> DC_NET : joins
+
+' K8s Connections
+K8S_HB_DEP --> K8S_HB_SVC : exposes
+K8S_HB_SVC --> K8S_HB_ING : routes
+K8S_HB_ING --> K8S_ING_CTRL : uses
+K8S_HB_ING ..> K8S_CERT : certificate
+
+K8S_API_DEP --> K8S_API_SVC : exposes
+K8S_WEB_DEP --> K8S_WEB_SVC : exposes
+K8S_API_SVC --> K8S_API_ING : routes
+
+K8S_MINIO_STS --> K8S_MINIO_PVC : claims
+K8S_MINIO_STS --> K8S_MINIO_SVC : exposes
+K8S_PG_STS --> K8S_PG_PVC : claims
+K8S_PG_STS --> K8S_PG_SVC : exposes
+
+K8S_PROM_STS --> K8S_PROM_SVC : exposes
+K8S_GRAF_DEP --> K8S_GRAF_SVC : exposes
+K8S_GRAF_SVC --> K8S_GRAF_ING : routes
+
+K8S_MINIO_PVC ..> K8S_STORAGE : uses
+K8S_PG_PVC ..> K8S_STORAGE : uses
+
+' CI/CD Flow
+GH_BUILD --> GH_REGISTRY : push images
+GH_REGISTRY --> K8S_API_DEP : pull images
+GH_REGISTRY --> K8S_WEB_DEP : pull images
+GH_DEPLOY --> K8S_API_DEP : kubectl apply
+
+' Device Connections
+DEV_AGENT ..> K8S_MQTT_SVC : connects via MQTT
+DEV_AGENT ..> K8S_MINIO_SVC : downloads from
+DEV_CONFIG ..> DEV_AGENT : configures
+DEV_CERTS ..> DEV_AGENT : authenticates
+
+@enduml

@@ -1,0 +1,140 @@
+@startuml OTA Architecture
+!theme plain
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultFontSize 10
+
+' Color definitions
+skinparam rectangle {
+    BackgroundColor<<backend>> #4fc3f7
+    BorderColor<<backend>> #01579b
+    FontColor<<backend>> #000000
+
+    BackgroundColor<<storage>> #ffd54f
+    BorderColor<<storage>> #f57f17
+    FontColor<<storage>> #000000
+
+    BackgroundColor<<security>> #ef5350
+    BorderColor<<security>> #b71c1c
+    FontColor<<security>> #ffffff
+
+    BackgroundColor<<device>> #66bb6a
+    BorderColor<<device>> #1b5e20
+    FontColor<<device>> #000000
+
+    BackgroundColor<<cicd>> #ba68c8
+    BorderColor<<cicd>> #4a148c
+    FontColor<<cicd>> #ffffff
+
+    BackgroundColor<<integration>> #ff9800
+    BorderColor<<integration>> #e65100
+    FontColor<<integration>> #000000
+}
+
+package "Cloud/Backend Infrastructure" {
+    package "Update Management" {
+        rectangle "Eclipse hawkBit\nUpdate Server" as HB <<backend>>
+        rectangle "REST API\nFastAPI/Flask" as API <<backend>>
+        rectangle "Web Dashboard\nReact + Tailwind" as WEB <<backend>>
+    }
+
+    package "Storage & Data" {
+        rectangle "MinIO\nUpdate Package Storage\nS3-compatible" as MINIO <<storage>>
+        database "PostgreSQL\nDevice Registry\nCampaign Data" as PG <<storage>>
+        database "Redis\nJob Queue\nSession Cache" as REDIS <<storage>>
+    }
+
+    package "Security Layer" {
+        rectangle "HashiCorp Vault\nKey Management\nSigning Keys" as VAULT <<security>>
+        rectangle "Signing Service\nPackage Verification" as SIGN <<security>>
+    }
+
+    package "Communication" {
+        rectangle "Mosquitto MQTT Broker\nDevice Communication" as MQTT <<backend>>
+        rectangle "Prometheus\nMetrics Collection" as PROM <<integration>>
+    }
+}
+
+package "CI/CD Pipeline" {
+    rectangle "GitHub Actions\nBuild Automation" as GH <<cicd>>
+    rectangle "Package Builder\nDelta Generation" as BUILD <<cicd>>
+}
+
+package "Edge Devices - Vehicle Simulation" {
+    package "Device 1 - Raspberry Pi 4" {
+        rectangle "Update Client\nSWUpdate/RAUC" as CLIENT1 <<device>>
+        rectangle "Partition A\nActive System" as PART1A <<device>>
+        rectangle "Partition B\nStandby/Update" as PART1B <<device>>
+        rectangle "Bootloader\nU-Boot" as BOOT1 <<device>>
+        rectangle "Telemetry Agent\nStatus Reporting" as AGENT1 <<device>>
+    }
+
+    package "Device 2 - NVIDIA Jetson" {
+        rectangle "Update Client\nSWUpdate/RAUC" as CLIENT2 <<device>>
+        rectangle "Partition A\nActive System" as PART2A <<device>>
+        rectangle "Partition B\nStandby/Update" as PART2B <<device>>
+        rectangle "Bootloader\nUEFI/U-Boot" as BOOT2 <<device>>
+        rectangle "Telemetry Agent\nStatus Reporting" as AGENT2 <<device>>
+        rectangle "TPM/Secure Boot\nHardware Security" as TPM <<security>>
+    }
+
+    package "Device 3+ - Fleet" {
+        rectangle "... Additional Devices\nScalability Testing" as FLEET <<device>>
+    }
+}
+
+package "Integration Points" {
+    rectangle "Home Assistant\nSmart Home Integration\nYour Existing Setup" as HA <<integration>>
+    rectangle "Grafana\nMonitoring Dashboard" as GRAFANA <<integration>>
+}
+
+' CI/CD Flow
+GH --> BUILD : Build Trigger
+BUILD --> MINIO : Upload Package
+BUILD --> SIGN : Request Signing
+SIGN <--> VAULT : Fetch Keys
+SIGN --> MINIO : Signed Package
+BUILD --> HB : Register Version
+
+' Backend Connections
+WEB <--> API : API Calls
+API <--> PG : Device Data
+API <--> REDIS : Session/Cache
+API <--> MINIO : Package URLs
+API <--> HB : Campaign Control
+HB <--> MQTT : Commands
+API --> PROM : Metrics
+
+' Device Communication
+MQTT <--> CLIENT1 : Subscribe/Publish
+MQTT <--> CLIENT2 : Subscribe/Publish
+MQTT <--> FLEET : Fleet Comm
+
+' Update Flow - Device 1
+CLIENT1 --> HB : Check Updates
+CLIENT1 --> MINIO : Download Package
+CLIENT1 --> SIGN : Verify Signature
+CLIENT1 --> PART1B : Write Update
+BOOT1 --> PART1A : A/B Switch
+BOOT1 --> PART1B : A/B Switch
+AGENT1 --> MQTT : Status/Logs
+AGENT1 --> PROM : Metrics
+
+' Update Flow - Device 2
+CLIENT2 --> HB : Check Updates
+CLIENT2 --> MINIO : Download Package
+CLIENT2 --> SIGN : Verify Signature
+CLIENT2 --> TPM : Hardware Verify
+CLIENT2 --> PART2B : Write Update
+BOOT2 --> PART2A : Secure Boot
+BOOT2 --> PART2B : Secure Boot
+BOOT2 <--> TPM : Attestation
+AGENT2 --> MQTT : Status/Logs
+AGENT2 --> PROM : Metrics
+
+' Monitoring & Integration
+PROM --> GRAFANA : Visualize
+MQTT --> HA : Events
+API --> HA : REST API
+
+@enduml

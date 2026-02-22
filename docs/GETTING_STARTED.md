@@ -35,10 +35,10 @@ cd ota-demonstrator
 cd infrastructure/docker
 
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Verify services are running
-docker-compose ps
+docker compose ps
 
 # Expected output:
 # hawkbit       - running on port 8080

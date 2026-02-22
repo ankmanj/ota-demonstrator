@@ -1,0 +1,99 @@
+@startuml OTA Sequence Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+participant "Admin/Dashboard" as Admin
+participant "hawkBit Server" as HB
+participant "MQTT Broker" as MQTT
+participant "Package Storage" as MinIO
+participant "Signing Service" as Sign
+participant "Vehicle Device" as Device
+participant "Bootloader" as Boot
+participant "Monitoring" as Monitor
+
+== Phase 1: Package Preparation ==
+
+Admin -> HB : Create Update Campaign\n(Target: Fleet A, Version 2.0)
+Admin -> MinIO : Upload Update Package
+MinIO -> Sign : Request Package Signature
+Sign -> Sign : Sign with Private Key
+Sign --> MinIO : Return Signed Package
+HB -> HB : Create Deployment\n(Staged Rollout: 10%)
+
+== Phase 2: Update Discovery ==
+
+Device -> MQTT : Subscribe to update topic\n(device/VIN123/updates)
+HB -> MQTT : Publish Update Available\n(10% of fleet)
+MQTT -> Device : Update Notification\n(Version 2.0 available)
+Device -> HB : Poll for Update Details
+HB --> Device : Return Update Metadata\n(Size, Hash, URL)
+
+== Phase 3: Pre-Download Checks ==
+
+Device -> Device : Check Storage Space\n(Partition B: 2GB free)
+Device -> Device : Check Battery/Power\n(>50% or charging)
+Device -> Device : Check Network\n(WiFi/4G available)
+Device -> Monitor : Report Pre-check Status
+
+== Phase 4: Download & Verification ==
+
+Device -> MinIO : Download Package\n(with resume support)
+MinIO --> Device : Stream Package Data\n(Delta: 200MB)
+Device -> Device : Verify Package Hash\n(SHA-256)
+Device -> Sign : Verify Signature\n(with Public Key)
+Sign --> Device : Signature Valid
+Device -> Monitor : Report Download Complete
+
+== Phase 5: Installation ==
+
+Device -> Device : Mount Partition B\n(standby partition)
+Device -> Device : Extract & Install\n(SWUpdate process)
+Device -> Device : Set Boot Flag\n(next boot: Partition B)
+Device -> Monitor : Report Installation Ready
+Device -> MQTT : Publish Status\n(ready_for_reboot)
+
+== Phase 6: Reboot & Activation ==
+
+Device -> Device : Schedule Reboot\n(user consent or auto)
+Device -> Boot : Reboot
+Boot -> Boot : Read Boot Flag
+Boot -> Boot : Boot from Partition B\n(new version)
+Boot -> Device : Start System
+
+== Phase 7: Health Check ==
+
+Device -> Device : Run Health Checks\n(Services, connectivity)
+Device -> Device : Version Verification\n(confirm v2.0 running)
+
+alt Successful Update
+    Device -> Boot : Commit Boot Flag\n(permanent)
+    Device -> MQTT : Report Success\n(update_successful)
+    MQTT -> HB : Update Device Status
+    HB -> Monitor : Success Metrics
+    Device -> Monitor : Telemetry: v2.0 stable
+    note over Device : Rollback protection:\nPartition A marked inactive
+else Health Check Failed
+    Device -> Boot : Revert Boot Flag
+    Device -> Device : Trigger Watchdog Reset
+    Boot -> Boot : Boot from Partition A\n(previous version)
+    Device -> MQTT : Report Rollback\n(update_failed, reverted)
+    MQTT -> HB : Update Failed Status
+    HB -> Admin : Alert: Device VIN123 Rollback
+    Device -> Monitor : Telemetry: Rolled back to v1.5
+    note over Device : Automatic rollback:\nSystem recovers to known-good
+end
+
+== Phase 8: Fleet Progression ==
+
+HB -> HB : Check Success Rate\n(95% success in 10%)
+HB -> HB : Expand Rollout\n(Now 50% of fleet)
+HB -> MQTT : Notify Next Batch
+
+== Monitoring & Analytics ==
+
+Monitor -> Admin : Dashboard Update\n(Success: 95%, Failed: 5%)
+Admin -> HB : Analyze Failed Devices
+HB --> Admin : Failure Logs & Reasons
+
+@enduml
