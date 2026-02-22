@@ -40,3 +40,13 @@ build/
 *.key
 *.pem
 private_keys/
+keys/
+
+infrastructure/scripts/build/
+infrastructure/scripts/Keys/
+infrastructure/scripts/output/
+
+infrastructure/infrastructure/docker/mosquitto/*
+infrastructure/infrastructure/docker/mosquitto.conf
+infrastructure/infrastructure/docker/.env.example
+infrastructure/infrastructure/docker/.env
