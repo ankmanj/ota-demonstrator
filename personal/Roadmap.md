@@ -303,6 +303,13 @@ cat sw-description
 # Document security model
 ```
 
+### ✅ TODO: Test Merkle hash tree update
+- [ ] Run `build-merkle-manifest.py` on a real rootfs image to generate `manifest.json`
+- [ ] Upload both the image and `manifest.json` to MinIO
+- [ ] Set `install_strategy: merkle` in `config.yaml`
+- [ ] Trigger an OTA update and confirm per-block verification in the agent logs
+- [ ] Intentionally corrupt one block in the image and verify the agent aborts with a block hash mismatch error
+
 ---
 
 ## Phase 5-6: Multi-Device Fleet (Weeks 6-8)
