@@ -5,7 +5,7 @@ __pycache__/
 *.so
 .Python
 env/
-venv/
+.venv/
 *.egg-info/
 
 # Node
@@ -43,6 +43,7 @@ private_keys/
 keys/
 
 infrastructure/scripts/build/
+infrastructure/scripts/build-real/
 infrastructure/scripts/Keys/
 infrastructure/scripts/output/
 
@@ -50,3 +51,6 @@ infrastructure/infrastructure/docker/mosquitto/*
 infrastructure/infrastructure/docker/mosquitto.conf
 infrastructure/infrastructure/docker/.env.example
 infrastructure/infrastructure/docker/.env
+
+agent/.venv/*
+agent/__pycache__/*
